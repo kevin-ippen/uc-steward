@@ -33,8 +33,8 @@ cd uc-steward
 # Then deploy in dry-run mode (read-only, no writes)
 databricks bundle deploy --target dev
 
-# Run the daily governance job (safe: dry_run defaults to false,
-# but set dry_run: "true" in databricks.yml to preview)
+# NOT safe by default — set dry_run: "true" in databricks.yml first
+# Then run the daily governance job to preview what it would do
 databricks bundle run uc_steward_daily_governance --target dev
 ```
 
@@ -230,7 +230,7 @@ All configuration is via bundle variables in `databricks.yml`. Override per-targ
 | `dry_run` | `false` | Suppress all write actions |
 | `feature_check_mode` | `standard` | `standard` or `elevated` (admin) |
 | `enable_feature_checks` | `true` | Enable platform feature checks |
-| `model_name` | `databricks-gemini-3-5-flash` | LLM for AI-generated plans |
+| `model_name` | `databricks-claude-haiku-4-5` | LLM for AI-generated plans (any FMAPI-compatible endpoint) |
 | `enable_ai_plans` | `true` | Enable AI migration plan generation |
 
 </details>
@@ -314,7 +314,7 @@ uc-steward/
 
 - [ ] Interactive Slack bot for approve/reject of migration plans
 - [ ] Certification approval workflow via Genie Space
-- [ ] Screenshot gallery and sample output in `examples/`
+- [ ] Sample bridge view DDL + Jira ticket screenshot in `examples/`
 
 ---
 

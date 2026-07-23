@@ -58,7 +58,7 @@ variables:
   max_ai_descriptions_per_run:
     default: "50"
   model_name:
-    default: "databricks-gemini-3-5-flash"
+    default: "databricks-claude-haiku-4-5"  # Any FMAPI endpoint works: claude, llama, gpt, gemini
   enable_ai_plans:
     default: "true"
   enable_ai_descriptions:
