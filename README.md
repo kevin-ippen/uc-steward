@@ -2,23 +2,37 @@
 
 > *Clean Up, Aisle Five.*
 
-Catalog cleanup doesn't happen because breaking a dashboard is a career risk. Nobody renames a table — even one named `tmp_backup_v3_FINAL` — when five downstream consumers might silently break. **UC Steward removes the fear.** It builds the bridge view *before* it moves anything, so consumers keep working while the estate gets cleaned.
+Every Unity Catalog migration brings something with it. The mess you inherited, the parts nobody wants to touch, the tables that came over because deleting them was riskier than keeping them. UC Steward is for that — finding what's dead, mapping what depends on it, and making the cleanup safe enough that someone actually does it.
 
-Observability tools report violations. UC Steward resolves them.
+**UC Steward turns catalog policy violations into safe, approved, backward-compatible changes — and writes the resulting trust signals back into Unity Catalog.**
 
 ---
 
-## Why This Exists Now
+## Why Cleanup Fails
 
-Your Unity Catalog is about to become the ontology layer for AI agents. Every untagged `_bak` table, every orphaned staging artifact, every table with no domain assignment is **ontology pollution** — and agents inherit it. When a Genie space or tool-calling agent queries your catalog, dead tables don't just waste storage. They reduce retrieval precision, inject hallucination risk, and set a ceiling on agent accuracy that no prompt engineering can fix.
+Cleanup fails because change is unsafe, not because detection is absent. Whoever breaks a dashboard owns the outage. The bridge view transfers that risk to the tool — consumers keep working on the old name while the rename settles, and the view expires only after migration is confirmed.
 
-Governance isn't hygiene anymore. It's the difference between agents that work and agents that confidently cite a three-year-old backup table.
+Poor metadata and ambiguous semantics increase retrieval and governance risk. Steward improves the quality and traceability of context feeding UC Semantics — not by replacing native capabilities, but by ensuring the preconditions for them are met.
+
+---
+
+## Where It Sits
+
+| | Governance Hub | UC Steward |
+|---|---|---|
+| **Question** | Where is our posture weak and what should we prioritize? | How do we correct this without breaking consumers, and how do we prove it's resolved? |
+| **Mode** | Bulk-safe: tags, classification, metadata quality at scale | Risky-per-asset: anything touching a name or schema where a consumer breaks |
+| **Design** | Observe, surface, prioritize | Scope via lineage, build compatibility layer, execute with rollback |
+
+The boundary: **safe-in-bulk** versus **risky-per-asset**. Anything needing lineage scoping, a compatibility layer, and rollback is UC Steward's side — and it doesn't converge with bulk operations.
+
+> UC Steward delivers standalone value today. The Hub relationship is trajectory, not dependency.
 
 ---
 
 ## What Makes It Different
 
-UC Steward isn't a scanner that dumps a spreadsheet of problems. It's a **lineage-aware remediation engine** built around one key insight: the bridge view is the unit of safe change.
+UC Steward is a **lineage-aware remediation engine** built around one mechanism: the bridge view is the unit of safe change.
 
 When it finds a violation, it:
 
@@ -28,20 +42,20 @@ When it finds a violation, it:
 4. Opens a Jira ticket, notifies the owner, and tracks to completion
 5. Computes the annualized cost of inaction (storage + compute waste)
 
-The result isn't a report. It's a pull request for your data catalog.
+The result isn't a report. It's an approved transition with an audit trail.
 
-### Certification Readiness Score
+### Adoption Readiness Score
 
-UC Steward scores your estate not against arbitrary rules, but against **how much of it is ready to be trusted by Discover and by agents**:
+Measures how much of the estate is ready to be trusted by Discover, Domains, and agents — not compliance with internal rules:
 
 | Dimension | Weight | What It Measures |
 |-----------|--------|-----------------|
-| Tag coverage | 30% | Can an agent find this table by domain and purpose? |
-| Certification state | 30% | Has a steward vouched for this table's quality? |
+| Tag coverage | 30% | Can discovery tools resolve this table by domain and purpose? |
+| Certification state | 30% | Has a steward vouched for freshness and correctness? |
 | Feature enablement | 30% | Are platform safeguards (monitoring, classification) active? |
 | Violation backlog | 10% | How much unresolved risk is accumulating? |
 
-The score answers one question: *what percentage of my catalog is agent-ready?*
+Same math as before. Real destination: adoption readiness for platform semantics.
 
 ## Quickstart
 
@@ -175,7 +189,7 @@ Set `dry_run: "true"` in your target variables. In dry-run mode:
 - **No** Jira tickets are created
 - **No** email/Slack notifications are sent
 - **No** bridge views are written to target catalogs
-- The governance score still computes
+- The adoption readiness score still computes
 
 ### Idempotency
 
@@ -258,9 +272,9 @@ All configuration is via bundle variables in `databricks.yml`. Override per-targ
 
 ---
 
-## Governance Score
+## Adoption Readiness Score
 
-UC Steward computes a composite governance score (0–100) from four dimensions:
+UC Steward computes a composite adoption readiness score (0–100) from four dimensions:
 
 | Dimension | Weight | Source |
 |-----------|--------|--------|

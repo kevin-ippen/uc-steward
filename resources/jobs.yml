@@ -258,6 +258,22 @@ resources:
               control_schema: "{{job.parameters.control_schema}}"
               target_catalogs: "{{job.parameters.target_catalogs}}"
 
+
+        - task_key: "p5_semantic_drift_review"
+          description: "Phase 5 | Route semantic invalidations to owners"
+          depends_on:
+            - task_key: "p5_schema_drift"
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 300
+          notebook_task:
+            notebook_path: ../src/15_semantic_drift_review.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              dry_run: "{{job.parameters.dry_run}}"
+            source: WORKSPACE
+
         - task_key: "p5_jira_sync"
           description: "Phase 5 | Sync Jira ticket statuses back to migration_plans"
           depends_on:
