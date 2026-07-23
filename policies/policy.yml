@@ -1,0 +1,159 @@
+# UC Steward — Governance Policy
+# Single source of truth for all operator-configurable governance rules.
+#
+# This file is loaded into the governance_policy control table by
+# 00_control_plane_bootstrap on every run (MERGE — safe to re-run).
+# Notebooks read from the table at runtime via src/lib/policy.py.
+# Edit this file + re-run bootstrap to change policy without touching notebooks.
+
+version: "1"
+effective_date: "2026-01-01"
+
+# ── Tag policy ────────────────────────────────────────────────────────────────
+
+required_table_tags:
+  - owner
+  - domain
+  - quality_tier
+
+required_column_tags_pii:
+  - sensitivity
+  - pii
+
+allowed_domains:
+  - finance
+  - marketing
+  - operations
+  - product
+  - customer
+  - supply_chain
+  - hr
+  - engineering
+
+allowed_quality_tiers:
+  - bronze
+  - silver
+  - gold
+  - platinum
+
+# ── Naming policy ─────────────────────────────────────────────────────────────
+
+table_name_pattern: "^[a-z][a-z0-9_]*$"
+schema_name_pattern: "^[a-z][a-z0-9_]*$"
+
+naming_anti_patterns:
+  - pattern: ".*\\d{8}$"
+    description: "Date suffix detected — use table partitioning instead"
+  - pattern: ".*_copy\\d*$"
+    description: "Copy suffix — likely a duplicated table"
+  - pattern: ".*_backup$"
+    description: "Backup suffix — use Delta time travel instead"
+  - pattern: ".*_old$"
+    description: "Old suffix — candidate for deprecation"
+  - pattern: ".*_test$"
+    description: "Test suffix — should not be in production"
+  - pattern: ".*_temp$"
+    description: "Temp suffix — should be cleaned up"
+  - pattern: ".*_v\\d+$"
+    description: "Version suffix — use table versioning instead"
+
+# ── PII detection ─────────────────────────────────────────────────────────────
+
+pii_patterns:
+  email:
+    - ".*email.*"
+    - ".*e_mail.*"
+    - ".*email_address.*"
+  phone:
+    - ".*phone.*"
+    - ".*mobile.*"
+    - ".*cell.*"
+    - ".*fax.*"
+  ssn:
+    - ".*ssn.*"
+    - ".*social_sec.*"
+    - ".*sin_number.*"
+  name:
+    - ".*first_name.*"
+    - ".*last_name.*"
+    - ".*full_name.*"
+    - ".*customer_name.*"
+  address:
+    - ".*address.*"
+    - ".*street.*"
+    - ".*zip_code.*"
+    - ".*postal.*"
+  dob:
+    - ".*date_of_birth.*"
+    - ".*\\bdob\\b.*"
+    - ".*birth_date.*"
+    - ".*birthday.*"
+  ip_address:
+    - ".*ip_addr.*"
+    - ".*ip_address.*"
+    - ".*client_ip.*"
+    - ".*source_ip.*"
+
+# ── Staleness thresholds ──────────────────────────────────────────────────────
+
+staleness_days: 30
+escalation_days: 7
+review_window_days: 14
+
+# ── Enrichment ────────────────────────────────────────────────────────────────
+
+max_ai_descriptions_per_run: 50
+enable_ai_descriptions: true
+model_name: "databricks-gemini-3-5-flash"
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+notification_cooldown_days: 3
+notification_lookback_days: 7
+notification_batch_limit: 20
+
+# ── Feature enablement enforcement ───────────────────────────────────────────
+# Enforces that UC platform features are enabled for governed assets.
+# Each check has a tier:
+#   standard  — runs with normal UC grants (no admin required)
+#   elevated  — requires metastore admin or explicit system table grants
+#
+# If the SP lacks privileges for elevated checks, they are SKIPPED (not FAILED)
+# and the hygiene score denominator adjusts automatically.
+
+feature_enablement:
+  predictive_optimization:
+    enabled: true
+    scope:
+      - catalog
+      - schema
+    # Flags catalogs/schemas where Predictive Optimization is explicitly DISABLED.
+    # Tier: standard (uses DESCRIBE CATALOG/SCHEMA EXTENDED)
+
+  data_classification:
+    enabled: true
+    enforce_masks_on_pii: true
+    scope:
+      - schema
+    # Standard tier: verifies PII-tagged columns have column masks applied.
+    # Elevated tier: checks what % of tables have been scanned by classification.
+    # Coverage threshold for classification_scan_coverage (elevated):
+    scan_coverage_threshold_pct: 80.0
+
+  lakehouse_monitoring:
+    enabled: true
+    scope:
+      - table
+    # Only flags tables matching eligibility criteria (avoids noise on small tables).
+    eligibility:
+      min_size_gb: 1.0
+      min_weekly_queries: 10
+    # Elevated: bulk check via system.data_quality_monitoring.table_results
+    # Fallback: SDK quality_monitors.get() per table (slower, sampled)
+    sdk_sample_limit: 20
+
+# ── Retention ─────────────────────────────────────────────────────────────────
+
+scan_results_retention_days: 90
+plan_retention_days: 180
+cost_attribution_retention_days: 365

@@ -1,0 +1,467 @@
+resources:
+  jobs:
+
+    # ================================================================
+    # JOB 1 — Daily Governance
+    # 06:00 ET every day
+    # Phases:
+    #   p1  bootstrap     — ensure control schema + tables exist
+    #   p2  detection     — staleness / tag / naming (parallel)
+    #   p3  remediation   — reconciliation + certification (parallel)
+    #   p4  communication — batch-notify owners
+    #   p5  observability — cost attribution
+    # ================================================================
+    uc_steward_daily_governance:
+      name: "[${bundle.target}] UC Steward — Daily Governance"
+      description: >
+        End-to-end daily governance: bootstrap control plane, detect staleness /
+        tag gaps / naming violations, trigger reconciliation + certification,
+        notify owners, then capture cost attribution.
+      tags:
+        framework: "uc-steward"
+        domain: "governance"
+        env: "${bundle.target}"
+      queue:
+        enabled: true
+      max_concurrent_runs: 1
+      run_as:
+        user_name: ${var.run_as_user}
+      health:
+        rules:
+          - metric: RUN_DURATION_SECONDS
+            op: GREATER_THAN
+            value: 3600
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: control_schema
+          default: ${var.control_schema}
+        - name: target_catalogs
+          default: ${var.target_catalogs}
+        - name: staleness_days
+          default: ${var.staleness_days}
+        - name: escalation_days
+          default: ${var.escalation_days}
+        - name: review_window_days
+          default: ${var.review_window_days}
+        - name: table_name_pattern
+          default: ${var.table_name_pattern}
+        - name: schema_name_pattern
+          default: ${var.schema_name_pattern}
+        - name: required_table_tags
+          default: ${var.required_table_tags}
+        - name: notification_email
+          default: ${var.notification_email}
+        - name: slack_webhook_url
+          default: ${var.slack_webhook_url}
+        - name: notification_lookback_days
+          default: ${var.notification_lookback_days}
+        - name: notification_cooldown_days
+          default: ${var.notification_cooldown_days}
+        - name: notification_batch_limit
+          default: ${var.notification_batch_limit}
+        - name: jira_base_url
+          default: ${var.jira_base_url}
+        - name: jira_project_key
+          default: ${var.jira_project_key}
+        - name: max_plans_per_run
+          default: ${var.max_plans_per_run}
+        - name: enable_ai_plans
+          default: ${var.enable_ai_plans}
+        - name: model_name
+          default: ${var.model_name}
+        - name: workspace_id
+          default: ${var.workspace_id}
+        - name: cost_lookback_days
+          default: ${var.cost_lookback_days}
+        - name: cost_currency_code
+          default: ${var.cost_currency_code}
+        - name: cost_min_dbu_threshold
+          default: ${var.cost_min_dbu_threshold}
+        - name: framework_tag
+          default: ${var.framework_tag}
+        - name: dry_run
+          default: ${var.dry_run}
+        - name: feature_check_mode
+          default: ${var.feature_check_mode}
+        - name: enable_feature_checks
+          default: ${var.enable_feature_checks}
+      tasks:
+
+        # ── Phase 1: Foundation ─────────────────────────────────────────────
+        - task_key: "p1_bootstrap"
+          description: "Phase 1 | Bootstrap control schema and all control tables"
+          max_retries: 1
+          min_retry_interval_millis: 30000
+          timeout_seconds: 300
+          notebook_task:
+            notebook_path: ../src/00_control_plane_bootstrap.py
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+
+        # ── Phase 2: Detection (all three run in parallel after p1) ─────────
+        - task_key: "p2_staleness"
+          description: "Phase 2 | Flag tables not accessed in N days"
+          depends_on:
+            - task_key: "p1_bootstrap"
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 900
+          notebook_task:
+            notebook_path: ../src/01_staleness_detector.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              target_catalogs: "{{job.parameters.target_catalogs}}"
+              staleness_days: "{{job.parameters.staleness_days}}"
+
+        - task_key: "p2_tag_compliance"
+          description: "Phase 2 | Scan tables for required tag compliance"
+          depends_on:
+            - task_key: "p1_bootstrap"
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 600
+          notebook_task:
+            notebook_path: ../src/02_tag_compliance_scanner.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              target_catalogs: "{{job.parameters.target_catalogs}}"
+              required_table_tags: "{{job.parameters.required_table_tags}}"
+
+        - task_key: "p2_naming_conventions"
+          description: "Phase 2 | Flag assets violating naming conventions"
+          depends_on:
+            - task_key: "p1_bootstrap"
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 600
+          notebook_task:
+            notebook_path: ../src/03_naming_convention_enforcer.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              target_catalogs: "{{job.parameters.target_catalogs}}"
+              table_name_pattern: "{{job.parameters.table_name_pattern}}"
+              schema_name_pattern: "{{job.parameters.schema_name_pattern}}"
+
+        # ── Phase 3: Remediation (parallel, after all detectors) ────────────
+        - task_key: "p3_reconciliation"
+          description: "Phase 3 | Generate AI-powered migration and remediation plans"
+          depends_on:
+            - task_key: "p2_staleness"
+            - task_key: "p2_tag_compliance"
+            - task_key: "p2_naming_conventions"
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 1200
+          notebook_task:
+            notebook_path: ../src/07_reconciliation_planner.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              target_catalogs: "{{job.parameters.target_catalogs}}"
+              jira_base_url: "{{job.parameters.jira_base_url}}"
+              jira_project_key: "{{job.parameters.jira_project_key}}"
+              max_plans_per_run: "{{job.parameters.max_plans_per_run}}"
+              enable_ai_plans: "{{job.parameters.enable_ai_plans}}"
+              model_name: "{{job.parameters.model_name}}"
+              feature_check_mode: "{{job.parameters.feature_check_mode}}"
+              enable_feature_checks: "{{job.parameters.enable_feature_checks}}"
+
+        - task_key: "p3_certification"
+          description: "Phase 3 | Advance certification lifecycle (reviews, escalations, expiry)"
+          depends_on:
+            - task_key: "p2_staleness"
+            - task_key: "p2_tag_compliance"
+            - task_key: "p2_naming_conventions"
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 600
+          notebook_task:
+            notebook_path: ../src/05_certification_workflow.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              escalation_days: "{{job.parameters.escalation_days}}"
+              review_window_days: "{{job.parameters.review_window_days}}"
+
+        # ── Phase 4: Communication ──────────────────────────────────────────
+        - task_key: "p4_notify_owners"
+          description: "Phase 4 | Batch-notify asset owners via email and Slack"
+          depends_on:
+            - task_key: "p3_reconciliation"
+            - task_key: "p3_certification"
+          max_retries: 2
+          min_retry_interval_millis: 120000
+          timeout_seconds: 600
+          notebook_task:
+            notebook_path: ../src/06_owner_notifier.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              notification_email: "{{job.parameters.notification_email}}"
+              slack_webhook_url: "{{job.parameters.slack_webhook_url}}"
+              notification_lookback_days: "{{job.parameters.notification_lookback_days}}"
+              notification_cooldown_days: "{{job.parameters.notification_cooldown_days}}"
+              notification_batch_limit: "{{job.parameters.notification_batch_limit}}"
+              dry_run: "{{job.parameters.dry_run}}"
+
+        # ── Phase 5: Observability + Drift Detection ────────────────────────────
+        - task_key: "p5_cost_attribution"
+          description: "Phase 5 | Compute and persist daily cost attribution for this framework"
+          depends_on:
+            - task_key: "p4_notify_owners"
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 1200
+          notebook_task:
+            notebook_path: ../src/08_cost_attribution_tracker.py
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              workspace_id: "{{job.parameters.workspace_id}}"
+              cost_lookback_days: "{{job.parameters.cost_lookback_days}}"
+              cost_currency_code: "{{job.parameters.cost_currency_code}}"
+              cost_min_dbu_threshold: "{{job.parameters.cost_min_dbu_threshold}}"
+              framework_tag: "{{job.parameters.framework_tag}}"
+
+        - task_key: "p5_schema_drift"
+          description: "Phase 5 | Detect schema drift (column adds/removes/type changes)"
+          depends_on:
+            - task_key: "p4_notify_owners"
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 900
+          notebook_task:
+            notebook_path: ../src/10_schema_drift_detector.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              target_catalogs: "{{job.parameters.target_catalogs}}"
+
+        - task_key: "p5_jira_sync"
+          description: "Phase 5 | Sync Jira ticket statuses back to migration_plans"
+          depends_on:
+            - task_key: "p4_notify_owners"
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 300
+          notebook_task:
+            notebook_path: ../src/11_jira_sync.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              jira_base_url: "{{job.parameters.jira_base_url}}"
+
+        - task_key: "p5_access_proposals"
+          description: "Phase 5 | Generate GRANT/REVOKE proposals based on certification state"
+          depends_on:
+            - task_key: "p3_certification"
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 300
+          notebook_task:
+            notebook_path: ../src/12_access_proposals.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+
+      schedule:
+        quartz_cron_expression: ${var.governance_daily_cron}
+        timezone_id: "America/New_York"
+
+      email_notifications:
+        on_start:
+          - ${var.notification_email}
+        on_failure:
+          - ${var.notification_email}
+        on_duration_warning_threshold_exceeded:
+          - ${var.notification_email}
+
+      notification_settings:
+        no_alert_for_skipped_runs: true
+
+      permissions:
+        - level: CAN_VIEW
+          group_name: ${var.viewer_group}
+        - level: CAN_MANAGE_RUN
+          user_name: ${var.run_as_user}
+
+    # ================================================================
+    # JOB 2 — Weekly Metadata Enrichment
+    # 03:00 ET every Sunday
+    # Phases:
+    #   p1  bootstrap   — ensure control schema + tables exist
+    #   p2  enrichment  — AI descriptions + PII auto-tagging
+    # ================================================================
+    uc_steward_weekly_enrichment:
+      name: "[${bundle.target}] UC Steward — Weekly Metadata Enrichment"
+      description: >
+        Enriches table descriptions, auto-classifies PII columns, and
+        backfills missing tags using AI for tables lacking documentation.
+      tags:
+        framework: "uc-steward"
+        domain: "enrichment"
+        env: "${bundle.target}"
+      queue:
+        enabled: true
+      max_concurrent_runs: 1
+      run_as:
+        user_name: ${var.run_as_user}
+      health:
+        rules:
+          - metric: RUN_DURATION_SECONDS
+            op: GREATER_THAN
+            value: 7200
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: control_schema
+          default: ${var.control_schema}
+        - name: target_catalogs
+          default: ${var.target_catalogs}
+        - name: enable_ai_descriptions
+          default: ${var.enable_ai_descriptions}
+        - name: model_name
+          default: ${var.model_name}
+        - name: max_ai_descriptions_per_run
+          default: ${var.max_ai_descriptions_per_run}
+      tasks:
+        - task_key: "p1_bootstrap"
+          description: "Phase 1 | Bootstrap control schema and tables"
+          max_retries: 1
+          min_retry_interval_millis: 30000
+          timeout_seconds: 300
+          notebook_task:
+            notebook_path: ../src/00_control_plane_bootstrap.py
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+
+        - task_key: "p2_metadata_enricher"
+          description: "Phase 2 | AI-generate descriptions and auto-tag PII columns"
+          depends_on:
+            - task_key: "p1_bootstrap"
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
+          notebook_task:
+            notebook_path: ../src/04_metadata_enricher.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              target_catalogs: "{{job.parameters.target_catalogs}}"
+              enable_ai_descriptions: "{{job.parameters.enable_ai_descriptions}}"
+              model_name: "{{job.parameters.model_name}}"
+              max_ai_descriptions_per_run: "{{job.parameters.max_ai_descriptions_per_run}}"
+
+      schedule:
+        quartz_cron_expression: ${var.enrichment_weekly_cron}
+        timezone_id: "America/New_York"
+
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+
+      notification_settings:
+        no_alert_for_skipped_runs: true
+
+      permissions:
+        - level: CAN_VIEW
+          group_name: ${var.viewer_group}
+        - level: CAN_MANAGE_RUN
+          user_name: ${var.run_as_user}
+
+    # ================================================================
+    # JOB 3 — Monthly Housekeeping
+    # 04:00 ET on 1st of every month
+    # Phases:
+    #   p1  bootstrap     — ensure control schema + tables exist
+    #   p2  housekeeping  — prune old records, expire certs, health report
+    # ================================================================
+    uc_steward_monthly_housekeeping:
+      name: "[${bundle.target}] UC Steward — Monthly Housekeeping"
+      description: >
+        Monthly maintenance: prunes stale scan_results / migration_plans /
+        cost records by retention policy, expires overdue certifications,
+        and emits a governance health summary.
+      tags:
+        framework: "uc-steward"
+        domain: "housekeeping"
+        env: "${bundle.target}"
+      queue:
+        enabled: true
+      max_concurrent_runs: 1
+      run_as:
+        user_name: ${var.run_as_user}
+      health:
+        rules:
+          - metric: RUN_DURATION_SECONDS
+            op: GREATER_THAN
+            value: 1800
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: control_schema
+          default: ${var.control_schema}
+        - name: target_catalogs
+          default: ${var.target_catalogs}
+        - name: notification_email
+          default: ${var.notification_email}
+        - name: scan_results_retention_days
+          default: ${var.scan_results_retention_days}
+        - name: plan_retention_days
+          default: ${var.plan_retention_days}
+        - name: cost_attribution_retention_days
+          default: ${var.cost_attribution_retention_days}
+      tasks:
+        - task_key: "p1_bootstrap"
+          description: "Phase 1 | Bootstrap control schema and tables"
+          max_retries: 1
+          min_retry_interval_millis: 30000
+          timeout_seconds: 300
+          notebook_task:
+            notebook_path: ../src/00_control_plane_bootstrap.py
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+
+        - task_key: "p2_housekeeping"
+          description: "Phase 2 | Prune old records, expire certifications, emit health report"
+          depends_on:
+            - task_key: "p1_bootstrap"
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 1200
+          notebook_task:
+            notebook_path: ../src/09_monthly_housekeeping.py
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              target_catalogs: "{{job.parameters.target_catalogs}}"
+              notification_email: "{{job.parameters.notification_email}}"
+              scan_results_retention_days: "{{job.parameters.scan_results_retention_days}}"
+              plan_retention_days: "{{job.parameters.plan_retention_days}}"
+              cost_attribution_retention_days: "{{job.parameters.cost_attribution_retention_days}}"
+
+      schedule:
+        quartz_cron_expression: ${var.housekeeping_monthly_cron}
+        timezone_id: "America/New_York"
+
+      email_notifications:
+        on_start:
+          - ${var.notification_email}
+        on_failure:
+          - ${var.notification_email}
+
+      notification_settings:
+        no_alert_for_skipped_runs: true
+
+      permissions:
+        - level: CAN_VIEW
+          group_name: ${var.viewer_group}
+        - level: CAN_MANAGE_RUN
+          user_name: ${var.run_as_user}

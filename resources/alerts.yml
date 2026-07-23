@@ -1,0 +1,20 @@
+resources:
+  quality_monitors: {}  # placeholder for future DQ monitors
+
+  # SQL Alert definitions are deployed as queries + alert configurations.
+  # These queries are sourced from src/lib/alerts.py and deployed via the
+  # Databricks SQL Alerts API during bundle deploy.
+  #
+  # Alert deployment is handled by a dedicated notebook task (p5_deploy_alerts)
+  # in the daily governance job. The notebook:
+  #   1. Reads ALERT_DEFINITIONS from lib.alerts
+  #   2. Creates/updates SQL queries in the workspace
+  #   3. Creates/updates alert configurations with schedules
+  #
+  # Alert names:
+  #   - Critical Violations Unresolved >7d (every 60m)
+  #   - Certification Expiry Warning (daily)
+  #   - Feature Check Failures Detected (daily)
+  #   - Schema Drift Critical Events (daily)
+  #   - Stale Tables Without Owner Action (daily)
+  #   - Job Run Failures (every 60m)

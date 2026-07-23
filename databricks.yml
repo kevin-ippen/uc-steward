@@ -1,0 +1,131 @@
+bundle:
+  name: uc-steward
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    default: ""          # Set to your Unity Catalog catalog name
+  control_schema:
+    default: "uc_hygiene"
+  warehouse_id:
+    default: ""          # Your SQL warehouse ID — required for dashboard + SQL extensions
+  workspace_id:
+    default: ""          # Your workspace ID — used by cost attribution tracker
+  target_catalogs:
+    default: ""          # Comma-separated list of catalogs to scan
+
+  # Governance policy knobs
+  staleness_days:
+    default: "30"
+  archive_threshold_days:
+    default: "60"        # Days without access before recommending archive (separate from detection)
+  escalation_days:
+    default: "7"
+  review_window_days:
+    default: "14"
+  table_name_pattern:
+    default: "^[a-z][a-z0-9_]*$"
+  schema_name_pattern:
+    default: "^[a-z][a-z0-9_]*$"
+  required_table_tags:
+    default: "owner,domain,quality_tier"
+  required_column_tags_pii:
+    default: "sensitivity,pii"
+
+  # Notification controls
+  notification_email:
+    default: ""          # Admin fallback email for unowned assets
+  slack_webhook_url:
+    default: ""
+  notification_lookback_days:
+    default: "7"
+  notification_cooldown_days:
+    default: "3"
+  notification_batch_limit:
+    default: "20"
+
+  # Feature enablement enforcement
+  feature_check_mode:
+    default: "standard"   # "standard" = skip admin-only checks; "elevated" = full coverage (requires metastore admin SP)
+  enable_feature_checks:
+    default: "true"       # Set "false" to disable feature enablement checks entirely
+
+  # Planning and AI controls
+  max_plans_per_run:
+    default: "20"
+  max_ai_descriptions_per_run:
+    default: "50"
+  model_name:
+    default: "databricks-gemini-3-5-flash"
+  enable_ai_plans:
+    default: "true"
+  enable_ai_descriptions:
+    default: "true"
+
+  # Cost attribution controls
+  cost_lookback_days:
+    default: "7"
+  cost_currency_code:
+    default: "USD"
+  cost_min_dbu_threshold:
+    default: "0"
+
+  # Identity: who the jobs run as (SP email or user email for dev, SP for prod)
+  run_as_user:
+    default: ""          # e.g. "svc-uc-steward@company.com" — overridden per target below
+
+  # Job visibility (CAN_VIEW group — set to "" to skip this ACL entry)
+  viewer_group:
+    default: "users"
+
+  # Cost attribution tag used to filter billing records to this framework
+  framework_tag:
+    default: "uc-steward"
+
+  # When dry_run=true, detectors run but notifications and Jira tickets are suppressed.
+  # Safe for first-run-at-a-customer or demo scenarios.
+  dry_run:
+    default: "false"
+
+  # Data retention (days) for control table pruning (Monthly Housekeeping job)
+  scan_results_retention_days:
+    default: "90"
+  plan_retention_days:
+    default: "180"
+  cost_attribution_retention_days:
+    default: "365"
+
+  # Schedule controls
+  governance_daily_cron:
+    default: "0 0 6 * * ?"
+  enrichment_weekly_cron:
+    default: "0 0 3 ? * SUN"
+  housekeeping_monthly_cron:
+    default: "0 0 4 1 * ?"
+
+  # Jira integration (optional - leave empty to disable)
+  jira_base_url:
+    default: ""          # e.g. https://yourorg.atlassian.net
+  jira_project_key:
+    default: ""          # e.g. DATA
+  # Jira API token comes from secret scope only:
+  # dbutils.secrets.get("uc-steward", "jira-api-token")
+
+targets:
+  dev:
+    default: true
+    mode: development
+    # workspace.host omitted — uses current auth context (CLI profile / workspace env)
+    variables:
+      catalog: "serverless_stable_h7wanf_catalog"
+      control_schema: "uc_hygiene_dev"
+      target_catalogs: "serverless_stable_h7wanf_catalog"
+      run_as_user: "${workspace.current_user.userName}"
+
+  prod:
+    mode: production
+    # workspace.host omitted — set via DATABRICKS_HOST env var or --profile flag at deploy time
+    variables:
+      control_schema: "uc_hygiene"

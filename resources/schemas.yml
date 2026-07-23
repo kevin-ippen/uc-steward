@@ -1,0 +1,6 @@
+resources:
+  schemas:
+    uc_hygiene_control:
+      catalog_name: ${var.catalog}
+      name: ${var.control_schema}
+      comment: "Control schema for UC Steward automation. Tables: scan_results, certification_state, migration_plans, bridge_views, notification_log, cost_attribution_daily, asset_inventory_snapshot, job_run_history."

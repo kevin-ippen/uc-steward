@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Databricks
+.databricks/
+.bundle/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+*.env.local

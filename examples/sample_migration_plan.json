@@ -1,0 +1,27 @@
+{
+  "plan_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "created_at": "2026-07-01T06:12:34Z",
+  "catalog_name": "prod",
+  "schema_name": "analytics",
+  "table_name": "UserSessions",
+  "violation_type": "naming_convention",
+  "proposed_new_name": "user_sessions",
+  "upstream_count": 2,
+  "downstream_count": 5,
+  "upstream_entities": "raw.clickstream_events, staging.session_builder",
+  "downstream_entities": "gold.customer_360, gold.engagement_metrics, dashboards.exec_weekly, notebooks.churn_model, notebooks.session_analysis",
+  "risk_level": "medium",
+  "estimated_effort": "1 hour",
+  "priority_score": 0.72,
+  "migration_steps": [
+    "1. CREATE TABLE prod.analytics.user_sessions AS SELECT * FROM prod.analytics.UserSessions",
+    "2. CREATE OR REPLACE VIEW prod.analytics.UserSessions AS SELECT * FROM prod.analytics.user_sessions",
+    "3. Notify 5 downstream consumers via email + Slack",
+    "4. Monitor bridge view access for 30 days",
+    "5. If zero direct-table access after 30 days: DROP VIEW + archive original"
+  ],
+  "rollback_plan": "DROP TABLE prod.analytics.user_sessions; -- original UserSessions unchanged",
+  "plan_status": "pending",
+  "jira_issue_key": "DATA-1847",
+  "notes": "Bridge view covers 5 downstream consumers. Medium risk due to dashboard dependency."
+}

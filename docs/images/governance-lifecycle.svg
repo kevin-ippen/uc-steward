@@ -1,0 +1,98 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="720" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0A0F1F"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="hot" x1="180" y1="160" x2="1100" y2="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF6B35"/>
+      <stop offset="1" stop-color="#FFB020"/>
+    </linearGradient>
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000000" flood-opacity="0.32"/>
+    </filter>
+    <style>
+      .title { font: 700 40px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #F8FAFC; }
+      .subtitle { font: 500 18px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #CBD5E1; }
+      .step { font: 800 22px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #0B1020; }
+      .label { font: 700 18px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #F8FAFC; }
+      .small { font: 500 14px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #CBD5E1; }
+      .tiny { font: 500 12px Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; fill: #94A3B8; }
+      .card { fill: #111827; stroke: #334155; stroke-width: 1.5; rx: 24; filter: url(#shadow); }
+      .circle { fill: url(#hot); filter: url(#shadow); }
+      .line { stroke: #FFB020; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+      .muted { stroke: #475569; stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 8 10; }
+    </style>
+    <marker id="arrow" markerWidth="13" markerHeight="13" refX="10" refY="6" orient="auto">
+      <path d="M2 2L10 6L2 10" fill="none" stroke="#FFB020" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <circle cx="1100" cy="610" r="220" fill="#FF6B35" opacity="0.08"/>
+  <circle cx="190" cy="130" r="180" fill="#FFB020" opacity="0.08"/>
+
+  <text x="72" y="80" class="title">Governance lifecycle</text>
+  <text x="72" y="113" class="subtitle">The bundle turns Unity Catalog cleanup into a repeatable operating loop, not a one-time audit.</text>
+
+  <!-- Central orbit -->
+  <circle cx="640" cy="372" r="96" fill="#0F172A" stroke="#475569" stroke-width="2.2"/>
+  <text x="580" y="356" class="label">Control</text>
+  <text x="574" y="386" class="label">plane state</text>
+  <text x="552" y="419" class="tiny">findings · plans · owners · cost</text>
+
+  <!-- Cards and steps -->
+  <rect x="94" y="188" width="230" height="116" class="card"/>
+  <circle cx="128" cy="224" r="22" class="circle"/>
+  <text x="121" y="232" class="step">1</text>
+  <text x="165" y="220" class="label">Observe</text>
+  <text x="165" y="250" class="small">Stale tables, missing tags,</text>
+  <text x="165" y="274" class="small">naming drift, schema drift.</text>
+
+  <rect x="524" y="154" width="230" height="116" class="card"/>
+  <circle cx="558" cy="190" r="22" class="circle"/>
+  <text x="551" y="198" class="step">2</text>
+  <text x="595" y="186" class="label">Enrich</text>
+  <text x="595" y="216" class="small">Generate descriptions,</text>
+  <text x="595" y="240" class="small">PII tags, policy rows.</text>
+
+  <rect x="956" y="188" width="230" height="116" class="card"/>
+  <circle cx="990" cy="224" r="22" class="circle"/>
+  <text x="983" y="232" class="step">3</text>
+  <text x="1027" y="220" class="label">Plan</text>
+  <text x="1027" y="250" class="small">Lineage-aware risk,</text>
+  <text x="1027" y="274" class="small">migration plans, Jira.</text>
+
+  <rect x="956" y="440" width="230" height="116" class="card"/>
+  <circle cx="990" cy="476" r="22" class="circle"/>
+  <text x="983" y="484" class="step">4</text>
+  <text x="1027" y="472" class="label">Notify</text>
+  <text x="1027" y="502" class="small">Owner email, Slack,</text>
+  <text x="1027" y="526" class="small">cooldowns, escalation.</text>
+
+  <rect x="524" y="476" width="230" height="116" class="card"/>
+  <circle cx="558" cy="512" r="22" class="circle"/>
+  <text x="551" y="520" class="step">5</text>
+  <text x="595" y="508" class="label">Govern</text>
+  <text x="595" y="538" class="small">Certify, deprecate, bridge,</text>
+  <text x="595" y="562" class="small">expire, and audit.</text>
+
+  <rect x="94" y="440" width="230" height="116" class="card"/>
+  <circle cx="128" cy="476" r="22" class="circle"/>
+  <text x="121" y="484" class="step">6</text>
+  <text x="165" y="472" class="label">Measure</text>
+  <text x="165" y="502" class="small">Governance score, feature</text>
+  <text x="165" y="526" class="small">score, run history, cost.</text>
+
+  <!-- Orbit arrows -->
+  <path d="M324 246 C400 195 454 185 524 205" class="line" marker-end="url(#arrow)"/>
+  <path d="M754 211 C834 181 897 197 956 234" class="line" marker-end="url(#arrow)"/>
+  <path d="M1073 304 C1125 347 1125 397 1074 440" class="line" marker-end="url(#arrow)"/>
+  <path d="M956 502 C875 572 821 590 754 540" class="line" marker-end="url(#arrow)"/>
+  <path d="M524 540 C438 585 379 571 324 506" class="line" marker-end="url(#arrow)"/>
+  <path d="M206 440 C160 390 158 347 207 304" class="line" marker-end="url(#arrow)"/>
+
+  <!-- Guardrail -->
+  <path d="M640 270 C640 298 640 308 640 372" class="muted"/>
+  <text x="72" y="657" class="tiny">Design bias: detection and planning are automated; destructive changes are gated by approval and compatibility views.</text>
+</svg>

@@ -1,0 +1,686 @@
+{
+  "datasets": [
+    {
+      "name": "feature_status",
+      "displayName": "Status Breakdown (Latest)",
+      "queryLines": [
+        "SELECT\n",
+        "  status,\n",
+        "  COUNT(*) AS check_count\n",
+        "FROM\n",
+        "  serverless_stable_h7wanf_catalog.uc_hygiene.feature_check_results\n",
+        "WHERE\n",
+        "  scan_date\n",
+        "    = (\n",
+        "      SELECT\n",
+        "        MAX(scan_date)\n",
+        "      FROM\n",
+        "        serverless_stable_h7wanf_catalog.uc_hygiene.feature_check_results\n",
+        "    )\n",
+        "GROUP BY\n",
+        "  status"
+      ]
+    },
+    {
+      "name": "feature_score",
+      "displayName": "Feature Score (Latest)",
+      "queryLines": [
+        "SELECT\n",
+        "  ROUND(\n",
+        "    100.0\n",
+        "      * SUM(\n",
+        "        CASE\n",
+        "          WHEN status = 'PASSED' THEN 1\n",
+        "          ELSE 0\n",
+        "        END\n",
+        "      )\n",
+        "      / NULLIF(\n",
+        "        SUM(\n",
+        "          CASE\n",
+        "            WHEN status IN ('PASSED', 'FAILED') THEN 1\n",
+        "            ELSE 0\n",
+        "          END\n",
+        "        ),\n",
+        "        0\n",
+        "      ),\n",
+        "    1\n",
+        "  ) AS score_pct,\n",
+        "  CAST(100 AS DOUBLE) AS target_score,\n",
+        "  SUM(\n",
+        "    CASE\n",
+        "      WHEN status = 'PASSED' THEN 1\n",
+        "      ELSE 0\n",
+        "    END\n",
+        "  ) AS passed,\n",
+        "  SUM(\n",
+        "    CASE\n",
+        "      WHEN status = 'FAILED' THEN 1\n",
+        "      ELSE 0\n",
+        "    END\n",
+        "  ) AS failed,\n",
+        "  SUM(\n",
+        "    CASE\n",
+        "      WHEN status = 'SKIPPED' THEN 1\n",
+        "      ELSE 0\n",
+        "    END\n",
+        "  ) AS skipped\n",
+        "FROM\n",
+        "  serverless_stable_h7wanf_catalog.uc_hygiene.feature_check_results\n",
+        "WHERE\n",
+        "  scan_date\n",
+        "    = (\n",
+        "      SELECT\n",
+        "        MAX(scan_date)\n",
+        "      FROM\n",
+        "        serverless_stable_h7wanf_catalog.uc_hygiene.feature_check_results\n",
+        "    )"
+      ]
+    },
+    {
+      "name": "feature_detail",
+      "displayName": "Check Details (Latest)",
+      "queryLines": [
+        "SELECT\n",
+        "  check_name,\n",
+        "  tier,\n",
+        "  status,\n",
+        "  scope_name,\n",
+        "  message\n",
+        "FROM\n",
+        "  serverless_stable_h7wanf_catalog.uc_hygiene.feature_check_results\n",
+        "WHERE\n",
+        "  scan_date\n",
+        "    = (\n",
+        "      SELECT\n",
+        "        MAX(scan_date)\n",
+        "      FROM\n",
+        "        serverless_stable_h7wanf_catalog.uc_hygiene.feature_check_results\n",
+        "    )\n",
+        "ORDER BY\n",
+        "  CASE status\n",
+        "    WHEN 'FAILED' THEN 1\n",
+        "    WHEN 'SKIPPED' THEN 2\n",
+        "    WHEN 'PASSED' THEN 3\n",
+        "  END,\n",
+        "  check_name"
+      ]
+    },
+    {
+      "name": "feature_trend",
+      "displayName": "Score Trend",
+      "queryLines": [
+        "SELECT\n",
+        "  scan_date,\n",
+        "  ROUND(\n",
+        "    100.0\n",
+        "      * SUM(\n",
+        "        CASE\n",
+        "          WHEN status = 'PASSED' THEN 1\n",
+        "          ELSE 0\n",
+        "        END\n",
+        "      )\n",
+        "      / NULLIF(\n",
+        "        SUM(\n",
+        "          CASE\n",
+        "            WHEN status IN ('PASSED', 'FAILED') THEN 1\n",
+        "            ELSE 0\n",
+        "          END\n",
+        "        ),\n",
+        "        0\n",
+        "      ),\n",
+        "    1\n",
+        "  ) AS score_pct\n",
+        "FROM\n",
+        "  serverless_stable_h7wanf_catalog.uc_hygiene.feature_check_results\n",
+        "GROUP BY\n",
+        "  scan_date\n",
+        "ORDER BY\n",
+        "  scan_date"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "feature_checks",
+      "displayName": "Feature Checks",
+      "layout": [
+        {
+          "widget": {
+            "name": "score_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "feature_score",
+                  "fields": [
+                    {
+                      "name": "target_score",
+                      "expression": "`target_score`"
+                    },
+                    {
+                      "name": "score_pct",
+                      "expression": "`score_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Feature Score %",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "score_pct",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  },
+                  "style": {
+                    "rules": [
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "0"
+                          },
+                          "operator": ">="
+                        },
+                        "color": "#15803d"
+                      },
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "0"
+                          },
+                          "operator": "<"
+                        },
+                        "color": "#dc2626"
+                      }
+                    ]
+                  },
+                  "displayName": "Feature Score"
+                },
+                "target": {
+                  "fieldName": "target_score",
+                  "change": {
+                    "type": "numeric"
+                  },
+                  "displayName": "Target"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "passed_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "feature_score",
+                  "fields": [
+                    {
+                      "name": "passed",
+                      "expression": "`passed`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Passed",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "passed",
+                  "style": {
+                    "rules": [
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "0"
+                          },
+                          "operator": ">="
+                        },
+                        "color": "#15803d"
+                      }
+                    ]
+                  },
+                  "displayName": "Passed"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "failed_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "feature_score",
+                  "fields": [
+                    {
+                      "name": "failed",
+                      "expression": "`failed`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Failed",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "failed",
+                  "style": {
+                    "rules": [
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "0"
+                          },
+                          "operator": ">="
+                        },
+                        "color": "#dc2626"
+                      }
+                    ]
+                  },
+                  "displayName": "Failed"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "skipped_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "feature_score",
+                  "fields": [
+                    {
+                      "name": "skipped",
+                      "expression": "`skipped`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Skipped",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "skipped",
+                  "style": {
+                    "rules": [
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "0"
+                          },
+                          "operator": ">="
+                        },
+                        "color": "#a16207"
+                      }
+                    ]
+                  },
+                  "displayName": "Skipped"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 0,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "status_bar",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "feature_status",
+                  "fields": [
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    },
+                    {
+                      "name": "check_count",
+                      "expression": "`check_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Check Status Breakdown"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "status",
+                  "displayName": "Status",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "PASSED",
+                        "FAILED",
+                        "SKIPPED"
+                      ]
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "check_count",
+                  "displayName": "Count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "status",
+                  "displayName": "Status",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "PASSED",
+                        "color": "#15803d"
+                      },
+                      {
+                        "value": "FAILED",
+                        "color": "#dc2626"
+                      },
+                      {
+                        "value": "SKIPPED",
+                        "color": "#a16207"
+                      }
+                    ]
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "score_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "feature_trend",
+                  "fields": [
+                    {
+                      "name": "scan_date",
+                      "expression": "`scan_date`"
+                    },
+                    {
+                      "name": "score_pct",
+                      "expression": "`score_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Feature Score Trend"
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "scan_date",
+                  "displayName": "Scan Date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "score_pct",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  },
+                  "displayName": "Score %",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 4,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "detail_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "feature_detail",
+                  "fields": [
+                    {
+                      "name": "check_name",
+                      "expression": "`check_name`"
+                    },
+                    {
+                      "name": "tier",
+                      "expression": "`tier`"
+                    },
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    },
+                    {
+                      "name": "scope_name",
+                      "expression": "`scope_name`"
+                    },
+                    {
+                      "name": "message",
+                      "expression": "`message`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Feature Check Details"
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "check_name",
+                    "displayName": "Check"
+                  },
+                  {
+                    "fieldName": "tier",
+                    "displayName": "Tier"
+                  },
+                  {
+                    "fieldName": "status",
+                    "displayName": "Status",
+                    "style": {
+                      "type": "basic",
+                      "rules": [
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "PASSED"
+                            },
+                            "operator": "="
+                          },
+                          "backgroundColor": "#dcfce7",
+                          "foregroundColor": "#15803d",
+                          "bold": true
+                        },
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "FAILED"
+                            },
+                            "operator": "="
+                          },
+                          "backgroundColor": "#fef2f2",
+                          "foregroundColor": "#dc2626",
+                          "bold": true
+                        },
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "SKIPPED"
+                            },
+                            "operator": "="
+                          },
+                          "backgroundColor": "#fefce8",
+                          "foregroundColor": "#a16207"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldName": "scope_name",
+                    "displayName": "Scope"
+                  },
+                  {
+                    "fieldName": "message",
+                    "displayName": "Message"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
