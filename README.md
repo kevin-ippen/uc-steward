@@ -2,25 +2,46 @@
 
 > *Clean Up, Aisle Five.*
 
-Your Unity Catalog has thousands of tables. Nobody knows which ones are dead, who owns them, or which of the seventeen `_backup` tables is safe to drop. Most governance tools tell you that. **This one generates the migration plan, builds the bridge view, and gets it approved.**
+Catalog cleanup doesn't happen because breaking a dashboard is a career risk. Nobody renames a table — even one named `tmp_backup_v3_FINAL` — when five downstream consumers might silently break. **UC Steward removes the fear.** It builds the bridge view *before* it moves anything, so consumers keep working while the estate gets cleaned.
 
 Observability tools report violations. UC Steward resolves them.
 
 ---
 
+## Why This Exists Now
+
+Your Unity Catalog is about to become the ontology layer for AI agents. Every untagged `_bak` table, every orphaned staging artifact, every table with no domain assignment is **ontology pollution** — and agents inherit it. When a Genie space or tool-calling agent queries your catalog, dead tables don't just waste storage. They reduce retrieval precision, inject hallucination risk, and set a ceiling on agent accuracy that no prompt engineering can fix.
+
+Governance isn't hygiene anymore. It's the difference between agents that work and agents that confidently cite a three-year-old backup table.
+
+---
+
 ## What Makes It Different
 
-UC Steward isn't a scanner that dumps a spreadsheet of problems — it's a **reconciliation engine**. When it finds a naming violation, it doesn't just flag it. It:
+UC Steward isn't a scanner that dumps a spreadsheet of problems. It's a **lineage-aware remediation engine** built around one key insight: the bridge view is the unit of safe change.
 
-1. Queries UC lineage to discover every upstream and downstream dependency
-2. Generates an AI-powered migration plan with risk-scored steps
-3. Creates a backward-compatible bridge view so consumers keep working
-4. Opens a Jira ticket and notifies the owner
-5. Tracks the plan to completion
+When it finds a violation, it:
+
+1. Queries UC lineage to map every upstream and downstream dependency
+2. Generates a risk-scored migration plan (AI-powered, with rollback steps)
+3. **Creates a backward-compatible bridge view** so consumers never break
+4. Opens a Jira ticket, notifies the owner, and tracks to completion
+5. Computes the annualized cost of inaction (storage + compute waste)
 
 The result isn't a report. It's a pull request for your data catalog.
 
----
+### Certification Readiness Score
+
+UC Steward scores your estate not against arbitrary rules, but against **how much of it is ready to be trusted by Discover and by agents**:
+
+| Dimension | Weight | What It Measures |
+|-----------|--------|-----------------|
+| Tag coverage | 30% | Can an agent find this table by domain and purpose? |
+| Certification state | 30% | Has a steward vouched for this table's quality? |
+| Feature enablement | 30% | Are platform safeguards (monitoring, classification) active? |
+| Violation backlog | 10% | How much unresolved risk is accumulating? |
+
+The score answers one question: *what percentage of my catalog is agent-ready?*
 
 ## Quickstart
 

@@ -148,6 +148,22 @@ resources:
               schema_name_pattern: "{{job.parameters.schema_name_pattern}}"
 
         # ── Phase 3: Remediation (parallel, after all detectors) ────────────
+
+        - task_key: "p2_domain_assignment"
+          description: "Phase 2 | Flag tables without domain assignment"
+          depends_on:
+            - task_key: "p1_bootstrap"
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 600
+          notebook_task:
+            notebook_path: ../src/14_domain_assignment_scanner.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              target_catalogs: "{{job.parameters.target_catalogs}}"
+              dry_run: "{{job.parameters.dry_run}}"
+
         - task_key: "p3_reconciliation"
           description: "Phase 3 | Generate AI-powered migration and remediation plans"
           depends_on:
@@ -255,6 +271,23 @@ resources:
               catalog: "{{job.parameters.catalog}}"
               control_schema: "{{job.parameters.control_schema}}"
               jira_base_url: "{{job.parameters.jira_base_url}}"
+
+
+        - task_key: "p3_decertification"
+          description: "Phase 3 | Flag certified tables that drifted or went stale"
+          depends_on:
+            - task_key: "p3_certification"
+            - task_key: "p5_schema_drift"
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 600
+          notebook_task:
+            notebook_path: ../src/13_decertification_detector.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              control_schema: "{{job.parameters.control_schema}}"
+              staleness_days: "{{job.parameters.staleness_days}}"
+              dry_run: "{{job.parameters.dry_run}}"
 
         - task_key: "p5_access_proposals"
           description: "Phase 5 | Generate GRANT/REVOKE proposals based on certification state"
