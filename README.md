@@ -289,7 +289,7 @@ The score trends over time in `cross_workspace_rollup` and is available via `src
 
 ## SQL Alerts (Real-Time Monitoring)
 
-Six pre-built alert queries in `src/lib/alerts.py`:
+Seven pre-built alert queries in `src/lib/alerts.py`:
 
 1. **Critical Violations >7d** — Unresolved critical findings (every 60m)
 2. **Certification Expiry** — Tables due for review in 14 days (daily)
@@ -297,6 +297,7 @@ Six pre-built alert queries in `src/lib/alerts.py`:
 4. **Schema Drift Critical** — Column removals or type changes (daily)
 5. **Stale Notifications** — Owner notifications pending >30d (daily)
 6. **Job Failures** — UC Steward task failures (every 60m)
+7. **Bridge Views Expiring Soon** — Active bridges expiring within 7 days (daily)
 
 ---
 
