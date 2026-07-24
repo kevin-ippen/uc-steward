@@ -118,6 +118,24 @@ ALERT_DEFINITIONS = [
               AND run_date >= CURRENT_DATE() - INTERVAL 1 DAY
         """,
     },
+    {
+        "name": "Bridge Views Expiring Soon",
+        "description": "Fires when active bridge views will expire within 7 days. Gives consumers a final window to migrate before the old name disappears.",
+        "severity": "warning",
+        "schedule_interval": 1440,  # daily
+        "query": """
+            SELECT
+                b.bridge_view_fqn,
+                b.new_table_fqn,
+                b.expires_at,
+                DATEDIFF(b.expires_at, CURRENT_TIMESTAMP()) AS days_remaining,
+                b.plan_id
+            FROM {control_fqn}.bridge_views b
+            WHERE b.status = 'active'
+              AND b.expires_at BETWEEN CURRENT_TIMESTAMP() AND CURRENT_TIMESTAMP() + INTERVAL 7 DAYS
+            ORDER BY b.expires_at ASC
+        """,
+    },
 ]
 
 

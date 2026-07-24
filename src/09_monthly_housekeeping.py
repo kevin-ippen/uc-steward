@@ -19,7 +19,6 @@
 # COMMAND ----------
 
 # DBTITLE 1,Widgets and config
-# Databricks notebook source
 dbutils.widgets.text("catalog",                          "")
 dbutils.widgets.text("control_schema",                   "uc_hygiene")
 dbutils.widgets.text("target_catalogs",                  "")
@@ -129,6 +128,77 @@ if expired_count > 0:
     print(f"Certification expirations: {expired_count:,} tables set to 'overdue'")
 else:
     print("Certification expirations: 0 tables overdue (clean)")
+
+# COMMAND ----------
+
+# DBTITLE 1,Phase 2b2 — Expire and DROP stale bridge views
+# Bridge views past their expires_at are DROPped from target catalogs and marked
+# expired in the control table. This prevents orphaned views from accumulating.
+# Safety: only drops views that UC Steward itself created (registered in bridge_views).
+
+from lib.common import validate_identifier, safe_table_ref
+
+_bridge_tbl = f"{control_fqn}.bridge_views"
+
+try:
+    expired_bridges = spark.sql(f"""
+    SELECT bridge_view_fqn, plan_id
+    FROM {_bridge_tbl}
+    WHERE status = 'active'
+      AND expires_at < current_timestamp()
+    """).collect()
+except Exception as e:
+    expired_bridges = []
+    print(f"  ⚠ Could not read bridge_views: {e}")
+
+bridges_dropped = 0
+for bridge in expired_bridges:
+    fqn = bridge.bridge_view_fqn
+    parts = fqn.split(".")
+    if len(parts) != 3:
+        print(f"  ⚠ Malformed bridge FQN, skipping: {fqn}")
+        continue
+
+    try:
+        validate_identifier(parts[0], "catalog")
+        validate_identifier(parts[1], "schema")
+        validate_identifier(parts[2], "table")
+        _ref = safe_table_ref(parts[0], parts[1], parts[2])
+        spark.sql(f"DROP VIEW IF EXISTS {_ref}")
+        bridges_dropped += 1
+    except ValueError as e:
+        print(f"  ⚠ Skipping invalid bridge identifier {fqn}: {e}")
+        continue
+    except Exception as e:
+        print(f"  ⚠ DROP VIEW failed for {fqn}: {e}")
+        continue
+
+# Mark all expired bridges in control table
+if expired_bridges:
+    spark.sql(f"""
+    UPDATE {_bridge_tbl}
+    SET status = 'expired'
+    WHERE status = 'active'
+      AND expires_at < current_timestamp()
+    """)
+
+# Also mark corresponding migration_plans as completed if bridge was last step
+if bridges_dropped > 0:
+    spark.sql(f"""
+    UPDATE {control_fqn}.migration_plans
+    SET plan_status = 'completed',
+        completed_at = current_timestamp(),
+        completion_notes = 'Bridge expired and dropped by monthly housekeeping'
+    WHERE plan_status = 'in_progress'
+      AND plan_id IN (
+        SELECT plan_id FROM {_bridge_tbl}
+        WHERE status = 'expired'
+          AND expires_at >= current_timestamp() - INTERVAL 1 DAY
+      )
+    """)
+
+print(f"Bridge view cleanup: {bridges_dropped} expired views dropped, {len(expired_bridges)} marked expired")
+_stats["bridge_views_expired"] = bridges_dropped
 
 # COMMAND ----------
 
@@ -318,6 +388,5 @@ print(f"  Total rows pruned: {total_rows_pruned:,}")
 print(f"  Certifications expired: {expired_count:,}")
 
 # COMMAND ----------
-
 
 
