@@ -4,7 +4,7 @@
 
 Detects Unity Catalog policy violations, maps their downstream blast radius via lineage, and produces safe migration plans with backward-compatible bridge views. Humans approve; the system executes with rollback.
 
----
+<img width="1916" height="821" alt="ucsteward" src="https://github.com/user-attachments/assets/6f767610-8204-418f-aaaf-03ceca72c492" />
 
 ## How It Works
 
