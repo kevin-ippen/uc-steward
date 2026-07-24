@@ -2,60 +2,32 @@
 
 > *Clean Up, Aisle Five.*
 
-Every Unity Catalog migration brings something with it. The mess you inherited, the parts nobody wants to touch, the tables that came over because deleting them was riskier than keeping them. UC Steward is for that — finding what's dead, mapping what depends on it, and making the cleanup safe enough that someone actually does it.
-
-**UC Steward turns catalog policy violations into safe, approved, backward-compatible changes — and writes the resulting trust signals back into Unity Catalog.**
+Detects Unity Catalog policy violations, maps their downstream blast radius via lineage, and produces safe migration plans with backward-compatible bridge views. Humans approve; the system executes with rollback.
 
 ---
 
-## Why Cleanup Fails
+## How It Works
 
-Cleanup fails because change is unsafe, not because detection is absent. Whoever breaks a dashboard owns the outage. The bridge view transfers that risk to the tool — consumers keep working on the old name while the rename settles, and the view expires only after migration is confirmed.
+For each violation (naming, staleness, missing tags):
 
-Poor metadata and ambiguous semantics increase retrieval and governance risk. Steward improves the quality and traceability of context feeding UC Semantics — not by replacing native capabilities, but by ensuring the preconditions for them are met.
+1. Query UC lineage API for upstream/downstream dependencies
+2. Classify risk (critical/high/medium/low) based on consumer types
+3. Generate migration steps with a rollback plan
+4. On approval: rename table, create bridge view at old name → new location
+5. Bridge expires after 30–90 days (risk-aware TTL); housekeeping DROPs it
 
----
-
-## Where It Sits
-
-| | Governance Hub | UC Steward |
-|---|---|---|
-| **Question** | Where is our posture weak and what should we prioritize? | How do we correct this without breaking consumers, and how do we prove it's resolved? |
-| **Mode** | Bulk-safe: tags, classification, metadata quality at scale | Risky-per-asset: anything touching a name or schema where a consumer breaks |
-| **Design** | Observe, surface, prioritize | Scope via lineage, build compatibility layer, execute with rollback |
-
-The boundary: **safe-in-bulk** versus **risky-per-asset**. Anything needing lineage scoping, a compatibility layer, and rollback is UC Steward's side — and it doesn't converge with bulk operations.
-
-> UC Steward delivers standalone value today. The Hub relationship is trajectory, not dependency.
-
----
-
-## What Makes It Different
-
-UC Steward is a **lineage-aware remediation engine** built around one mechanism: the bridge view is the unit of safe change.
-
-When it finds a violation, it:
-
-1. Queries UC lineage to map every upstream and downstream dependency
-2. Generates a risk-scored migration plan (AI-powered, with rollback steps)
-3. **Creates a backward-compatible bridge view** so consumers never break
-4. Opens a Jira ticket, notifies the owner, and tracks to completion
-5. Computes the annualized cost of inaction (storage + compute waste)
-
-The result isn't a report. It's an approved transition with an audit trail.
+Nothing auto-executes without human approval. The bridge view is the unit of safe change — consumers keep working on the old name while the rename settles.
 
 ### Adoption Readiness Score
 
-Measures how much of the estate is ready to be trusted by Discover, Domains, and agents — not compliance with internal rules:
+Composite 0–100 score measuring platform-readiness, not internal compliance:
 
-| Dimension | Weight | What It Measures |
-|-----------|--------|-----------------|
-| Tag coverage | 30% | Can discovery tools resolve this table by domain and purpose? |
-| Certification state | 30% | Has a steward vouched for freshness and correctness? |
-| Feature enablement | 30% | Are platform safeguards (monitoring, classification) active? |
-| Violation backlog | 10% | How much unresolved risk is accumulating? |
-
-Same math as before. Real destination: adoption readiness for platform semantics.
+| Dimension | Weight |
+|-----------|--------|
+| Tag coverage (owner, domain, quality_tier) | 30% |
+| Certification state | 30% |
+| Feature enablement (monitoring, classification) | 30% |
+| Open violation backlog | 10% |
 
 ## Quickstart
 
@@ -73,7 +45,7 @@ databricks bundle deploy --target dev
 databricks bundle run uc_steward_daily_governance --target dev
 ```
 
-> **First run?** Set `dry_run: "true"` in your target variables. UC Steward will scan, detect, and generate plans — but won't create Jira tickets, send notifications, or write bridge views until you're ready.
+Set `dry_run: "true"` for first run. Scans and plans execute; notifications and bridge views do not.
 
 ---
 
@@ -123,9 +95,7 @@ graph TD
 
 ---
 
-## What It Does
-
-### Three Jobs, Full Lifecycle
+## Jobs
 
 | Job | Schedule | Purpose |
 |-----|----------|---------|
@@ -133,25 +103,15 @@ graph TD
 | **Weekly Enrichment** | Sun 03:00 ET | AI-generate missing descriptions and PII tags |
 | **Monthly Housekeeping** | 1st 04:00 ET | Prune old records, expire certs, health report |
 
-### Detection Capabilities
+### Scanners
 
-| Scanner | What It Finds |
+| Scanner | Finds |
 |---------|--------------|
-| Staleness Detector | Tables not accessed in N days (configurable) |
+| Staleness | Tables not accessed in N days |
 | Tag Compliance | Missing required tags (owner, domain, quality_tier) |
-| Naming Enforcer | Tables/schemas violating naming patterns |
-| Schema Drift | Column additions, removals, type changes since last scan |
-| Feature Checks | Platform features not enabled (predictive optimization, classification, monitoring) |
-
-### Remediation Actions
-
-| Action | Description |
-|--------|------------|
-| Migration Plan | AI-generated rename + migration steps with rollback plan |
-| Bridge View | Backward-compatible view at old name pointing to new location |
-| Access Proposals | GRANT/REVOKE recommendations based on certification state |
-| Jira Tickets | Auto-created with priority, linked to plan |
-| Owner Notifications | Email + Slack with actionable next steps |
+| Naming | Tables/schemas violating naming patterns |
+| Schema Drift | Column adds, removes, type changes |
+| Feature Checks | Platform features not enabled (pred. optimization, classification, monitoring) |
 
 ---
 
@@ -212,14 +172,14 @@ INSERT INTO {control_schema}.exemptions VALUES (
 
 Pattern types: `table` (full FQN glob), `schema` (schema-level), `catalog` (entire catalog).
 
-### What It Cannot See
+### Lineage Blind Spots
 
-- Notebooks that haven't run recently (outside lineage retention window)
+- Notebooks outside lineage retention window
 - String-interpolated table references (`f"SELECT * FROM {tbl}"`)
-- External BI tools connecting via JDBC/ODBC (register in `external_tool_registry`)
+- JDBC/ODBC tools (register in `external_tool_registry` to inflate risk scoring)
 - Cross-workspace references (lineage is workspace-scoped)
 
-**Mitigation:** Extended bridge view TTLs (30–90 days) give most consumers time to surface. Register external tools in the registry so the planner factors them into risk.
+Bridge TTLs (30–90d) provide a buffer. Registered external tools auto-escalate risk to critical.
 
 ---
 
@@ -238,7 +198,7 @@ The service principal running UC Steward needs:
 | `CREATE VIEW` | Target schemas | Bridge view creation (optional) |
 | `MANAGE` | Control schema | Full CRUD on control tables |
 
-> **Minimal read-only mode:** With only `USE CATALOG` + `USE SCHEMA` + system table `SELECT`, UC Steward runs all detection and generates plans — it just can't execute remediation. This is the recommended starting posture.
+With only `USE CATALOG` + `USE SCHEMA` + system table `SELECT`, detection and planning work. Remediation (`SET TAGS`, `CREATE VIEW`) requires the optional permissions.
 
 ---
 
@@ -272,22 +232,7 @@ All configuration is via bundle variables in `databricks.yml`. Override per-targ
 
 ---
 
-## Adoption Readiness Score
-
-UC Steward computes a composite adoption readiness score (0–100) from four dimensions:
-
-| Dimension | Weight | Source |
-|-----------|--------|--------|
-| Tag coverage | 30% | % of tables with owner + domain + quality tags |
-| Certification | 30% | % of tables in certified state |
-| Feature enablement | 30% | % of platform features passing checks |
-| Violation backlog | 10% | Penalty per open critical/warning finding |
-
-The score trends over time in `cross_workspace_rollup` and is available via `src/lib/governance_score.py` for dashboard integration.
-
----
-
-## SQL Alerts (Real-Time Monitoring)
+## SQL Alerts
 
 Seven pre-built alert queries in `src/lib/alerts.py`:
 
