@@ -1,310 +1,205 @@
 # UC Steward
 
-> *Clean Up, Aisle Five.*
+A grab-bag of cleanup utilities for Unity Catalog. Most teams come out of a migration (HMS → UC, workspace consolidation, whatever) with some combination of stale tables nobody owns, naming that made sense to one person three years ago, missing tags, and zero documentation. This gives you a starting point for getting it under control, and a maturity curve for tightening things up over time.
 
-Detects Unity Catalog policy violations, maps their downstream blast radius via lineage, and produces safe migration plans with backward-compatible bridge views. Humans approve; the system executes with rollback.
+It's a scheduled Databricks job (deployed via DAB) that reads your UC metadata and system tables, writes findings to a set of control-plane Delta tables, and optionally notifies owners. It proposes changes — it doesn't execute them without review.
 
-<img width="1916" height="821" alt="ucsteward" src="https://github.com/user-attachments/assets/6f767610-8204-418f-aaaf-03ceca72c492" />
+## What's in the box
 
-## How It Works
+Pick what's useful, ignore what isn't. Roughly ordered from "start here" to "add later":
 
-For each violation (naming, staleness, missing tags):
+| Module | What it does |
+| --- | --- |
+| **Staleness detector** | Finds tables that haven't been written to or queried in N days (configurable). Joins to cost data so you can see what you're spending on dead weight. |
+| **Tag compliance scanner** | Checks tables against your required tags (owner, PII classification, domain, whatever you define in `policies/policy.yml`). |
+| **Naming convention enforcer** | Flags tables/schemas that don't match your naming rules. Suggests fixes. |
+| **Metadata enricher** | Uses an LLM (any FMAPI endpoint) to generate missing column descriptions and table comments from schema + sample data. Writes proposals, not direct updates. |
+| **Certification workflow** | Tracks which tables meet your bar for "certified" (has owner, has docs, passes tag checks, no staleness). Maintains the certification tag in UC. |
+| **Schema drift detector** | Snapshots INFORMATION_SCHEMA daily and diffs it. Flags column additions, removals, type changes. |
+| **Reconciliation planner** | The big one. When you need to rename/move tables, it generates migration plans with bridge views (a view at the old location pointing to the new one) so downstream consumers don't break. TTL-based expiry. |
+| **Cost attribution** | Rolls up system.billing.usage to a per-table daily cost estimate. Feeds the staleness detector and the dashboard. |
+| **Owner notifier** | Sends findings to table owners via Slack, email, or Jira (configure what you use). |
+| **Domain assignment scanner** | Finds tables with no UC domain assigned. Suggests domains based on schema-level majority voting. |
+| **Decertification detector** | Watches certified tables for drift, staleness, or coverage loss that should revoke certification. |
+| **Semantic drift review** | When schema drift invalidates a glossary term, metric view, or certification, routes a review request to the accountable owner. |
+| **Monthly housekeeping** | Expires old bridge views past their TTL, archives completed findings, compacts control-plane tables. |
 
-1. Query UC lineage API for upstream/downstream dependencies
-2. Classify risk (critical/high/medium/low) based on consumer types
-3. Generate migration steps with a rollback plan
-4. On approval: rename table, create bridge view at old name → new location
-5. Bridge expires after 30–90 days (risk-aware TTL); housekeeping DROPs it
+Plus a Jira sync module (optional) and access proposal generator (suggests GRANT changes based on query patterns).
 
-Nothing auto-executes without human approval. The bridge view is the unit of safe change — consumers keep working on the old name while the rename settles.
+## How it works
 
-### Adoption Readiness Score
+```
+┌─────────────────────────┐
+│  UC System Tables        │  system.information_schema.*
+│  + Billing + Lineage     │  system.billing.usage
+│  + Query History         │  system.query.history
+└───────────┬─────────────┘
+            │ read
+            ▼
+┌─────────────────────────┐
+│  UC Steward Job          │  Scheduled daily/weekly
+│  (notebooks + library)   │  Serverless compute
+└───────────┬─────────────┘
+            │ write
+            ▼
+┌─────────────────────────┐
+│  Control Plane Tables    │  findings, proposals,
+│  (your_catalog.steward)  │  notification_log,
+│                          │  bridge_views, scores
+└───────────┬─────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│  Notifications + Dashboard │
+│  (Slack / Email / Jira)    │
+└─────────────────────────┘
+```
 
-Composite 0–100 score measuring platform-readiness, not internal compliance:
+Everything flows through those control-plane tables. The dashboard reads from them. Notifications are triggered by them. If you don't like how a module works, you can ignore its findings without breaking anything else.
 
-| Dimension | Weight |
-|-----------|--------|
-| Tag coverage (owner, domain, quality_tier) | 30% |
-| Certification state | 30% |
-| Feature enablement (monitoring, classification) | 30% |
-| Open violation backlog | 10% |
+## Design philosophy
+
+- **Propose, don't execute.** Findings go to a table. Humans approve. Bridge views are the only thing that get created automatically (because they're backward-compatible by definition).
+- **UC is the system of record.** We read metadata from UC and write trust signals (tags, comments, certifications) back to UC. No shadow catalog.
+- **Policy-driven.** Thresholds, required tags, naming patterns, staleness windows — all in `policies/policy.yml`. Edit it to match your standards.
+- **Cherry-pick friendly.** Every module is independent. Start with staleness + cost (instant wins), add the rest when you're ready.
 
 ## Quickstart
 
+### Prerequisites
+
+- Databricks workspace with Unity Catalog enabled
+- System tables access (`system.billing.usage`, `system.information_schema.*`, `system.query.history`)
+- A catalog + schema for control-plane tables (e.g., `your_catalog.steward`)
+- Service principal with `USE CATALOG`, `USE SCHEMA`, `SELECT` on target catalogs + `CREATE TABLE` on the steward schema
+- (Optional) FMAPI endpoint access for the metadata enricher
+
+### Setup
+
+1. Clone this repo and configure your DAB target:
+
 ```bash
-# Clone and configure
 git clone https://github.com/kevin-ippen/uc-steward.git
 cd uc-steward
+```
 
-# Edit databricks.yml — set your catalog and target
-# Then deploy in dry-run mode (read-only, no writes)
+2. Edit `databricks.yml` — set your catalog, schema, and target workspace.
+
+3. Edit `policies/policy.yml` — define your naming conventions, required tags, staleness thresholds.
+
+4. Deploy:
+
+```bash
 databricks bundle deploy --target dev
-
-# NOT safe by default — set dry_run: "true" in databricks.yml first
-# Then run the daily governance job to preview what it would do
-databricks bundle run uc_steward_daily_governance --target dev
 ```
 
-Set `dry_run: "true"` for first run. Scans and plans execute; notifications and bridge views do not.
+5. Run the bootstrap to create control-plane tables:
 
----
-
-## Architecture
-
-```mermaid
-graph TD
-    subgraph "Phase 1: Foundation"
-        B[00 Bootstrap] --> |"15 control tables"| CT[(Control Schema)]
-    end
-
-    subgraph "Phase 2: Detection"
-        B --> S[01 Staleness]
-        B --> T[02 Tag Compliance]
-        B --> N[03 Naming Conventions]
-    end
-
-    subgraph "Phase 3: Remediation"
-        S & T & N --> R[07 Reconciliation Planner]
-        S & T & N --> C[05 Certification Workflow]
-        R --> |"AI migration plans"| CT
-        R --> |"Bridge views"| BV[Target Catalogs]
-        C --> |"Lifecycle state"| CT
-    end
-
-    subgraph "Phase 4: Communication"
-        R & C --> O[06 Owner Notifier]
-        O --> |"Email + Slack"| EXT[Owners]
-        O --> |"Tickets"| JIRA[Jira]
-    end
-
-    subgraph "Phase 5: Observability"
-        O --> COST[08 Cost Attribution]
-        O --> DRIFT[10 Schema Drift]
-        O --> SYNC[11 Jira Sync]
-        C --> ACC[12 Access Proposals]
-    end
-
-    subgraph "Weekly"
-        E[04 Metadata Enricher] --> |"AI descriptions"| BV
-    end
-
-    subgraph "Monthly"
-        H[09 Housekeeping] --> |"Prune + report"| CT
-    end
+```bash
+databricks bundle run steward_bootstrap --target dev
 ```
 
----
+6. Run a scan:
 
-## Jobs
-
-| Job | Schedule | Purpose |
-|-----|----------|---------|
-| **Daily Governance** | 06:00 ET | Detect → Plan → Notify → Track |
-| **Weekly Enrichment** | Sun 03:00 ET | AI-generate missing descriptions and PII tags |
-| **Monthly Housekeeping** | 1st 04:00 ET | Prune old records, expire certs, health report |
-
-### Scanners
-
-| Scanner | Finds |
-|---------|--------------|
-| Staleness | Tables not accessed in N days |
-| Tag Compliance | Missing required tags (owner, domain, quality_tier) |
-| Naming | Tables/schemas violating naming patterns |
-| Schema Drift | Column adds, removes, type changes |
-| Feature Checks | Platform features not enabled (pred. optimization, classification, monitoring) |
-
----
-
-## Control Tables (15)
-
-All tables live in your configured control schema (default: `uc_hygiene`):
-
-| Table | Purpose |
-|-------|---------|
-| `scan_results` | Daily scan findings with severity and recommended actions |
-| `certification_state` | Certification lifecycle per table (certified → overdue → deprecated) |
-| `migration_plans` | AI-generated remediation plans with status tracking |
-| `bridge_views` | Registry of backward-compat views with expiration |
-| `notification_log` | All owner notifications with response tracking |
-| `cost_attribution_daily` | Workload cost attribution by SKU and asset |
-| `asset_inventory_snapshot` | Point-in-time table inventory for trend analysis |
-| `job_run_history` | Execution history for all UC Steward tasks |
-| `exemptions` | Pattern-based scan exclusions (regex on catalog/schema/table) |
-| `governance_policy` | Canonical governance rules (seeded from `policies/policy.yml`) |
-| `feature_check_results` | Platform feature enablement check results |
-| `external_tool_registry` | External BI/ETL tools invisible to UC lineage |
-| `schema_drift_events` | Column-level schema changes with severity |
-| `schema_column_baseline` | Baseline for drift comparison |
-| `cross_workspace_rollup` | Multi-workspace governance metrics |
-
----
-
-## Safety Model
-
-### Dry Run Mode
-
-Set `dry_run: "true"` in your target variables. In dry-run mode:
-- All scans and detection runs normally
-- Migration plans are generated and stored
-- **No** Jira tickets are created
-- **No** email/Slack notifications are sent
-- **No** bridge views are written to target catalogs
-- The adoption readiness score still computes
-
-### Idempotency
-
-- All writes use `MERGE INTO` (upsert semantics) — safe to re-run
-- Migration plans are keyed on (catalog, schema, table, violation_type) — no duplicates
-- Bridge views use `CREATE OR REPLACE VIEW` — always current
-- Schema drift compares against a baseline that updates after each scan — re-runs produce no false positives
-
-### Exemptions
-
-Tables can be excluded from scanning via the `exemptions` table:
-
-```sql
-INSERT INTO {control_schema}.exemptions VALUES (
-  uuid(), 'table', 'catalog.schema.quarterly_regulatory_*',
-  'Quarterly reporting tables - exempt from staleness',
-  '2026-12-31', current_user(), current_timestamp(), true
-);
+```bash
+databricks bundle run steward_daily --target dev
 ```
 
-Pattern types: `table` (full FQN glob), `schema` (schema-level), `catalog` (entire catalog).
+### Configuration
 
-### Lineage Blind Spots
+The interactive setup notebook (`00_config.ipynb`) walks you through configuration if you prefer that to editing YAML directly.
 
-- Notebooks outside lineage retention window
-- String-interpolated table references (`f"SELECT * FROM {tbl}"`)
-- JDBC/ODBC tools (register in `external_tool_registry` to inflate risk scoring)
-- Cross-workspace references (lineage is workspace-scoped)
+Key settings in `policies/policy.yml`:
 
-Bridge TTLs (30–90d) provide a buffer. Registered external tools auto-escalate risk to critical.
+```yaml
+staleness:
+  warning_days: 30
+  critical_days: 90
 
----
+tags:
+  required:
+    - owner
+    - pii_classification
+    - domain
 
-## Required Permissions
+naming:
+  table_pattern: "^[a-z][a-z0-9_]*$"
+  schema_pattern: "^[a-z][a-z0-9_]*$"
 
-The service principal running UC Steward needs:
+bridge_views:
+  default_ttl_days: 90
+  critical_ttl_days: 180
+```
 
-| Permission | Scope | Why |
-|-----------|-------|-----|
-| `USE CATALOG` | Target catalogs | List schemas and tables |
-| `USE SCHEMA` | Target schemas | Describe tables, read tags |
-| `SELECT` | `system.access.audit` | Staleness detection (last access time) |
-| `SELECT` | `system.billing.usage` | Cost attribution |
-| `SELECT` | `system.query.history` | Query-based lineage supplement |
-| `SET TAGS` | Target tables | Tag compliance remediation (optional) |
-| `CREATE VIEW` | Target schemas | Bridge view creation (optional) |
-| `MANAGE` | Control schema | Full CRUD on control tables |
+## Safety model
 
-With only `USE CATALOG` + `USE SCHEMA` + system table `SELECT`, detection and planning work. Remediation (`SET TAGS`, `CREATE VIEW`) requires the optional permissions.
+- **Nothing destructive runs by default.** The job scans and writes findings. That's it.
+- **Bridge views are the only writes to production schemas**, and they're additive (a view at an old name pointing to a new location). They have a TTL and get cleaned up by the housekeeping module.
+- **The enricher and reconciliation planner write proposals** to control-plane tables. A human reviews and approves before anything touches production metadata.
+- **Dry-run mode** is available for every module (`--dry-run` or set in config).
 
----
+## Maturity curve
 
-## Configuration Reference
+You don't need to adopt everything at once. A reasonable progression:
 
-All configuration is via bundle variables in `databricks.yml`. Override per-target:
+1. **Week 1:** Deploy staleness detector + cost attribution. See what's dead and what it costs you.
+2. **Week 2:** Add tag compliance scanner. Define your required tags. See the gap.
+3. **Week 3:** Turn on owner notifications. People start fixing things.
+4. **Month 2:** Add naming enforcer + metadata enricher. Start filling in docs.
+5. **Month 3:** Enable certification workflow. Set your bar. Track progress on the dashboard.
+6. **Ongoing:** Add schema drift, domain assignment, reconciliation planner as needs arise.
 
-<details>
-<summary>Full variable reference (click to expand)</summary>
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `catalog` | `""` | Unity Catalog catalog for control tables |
-| `control_schema` | `uc_hygiene` | Schema name for control tables |
-| `target_catalogs` | `""` | Comma-separated catalogs to scan |
-| `staleness_days` | `30` | Days without access before flagging |
-| `table_name_pattern` | `^[a-z][a-z0-9_]*$` | Regex for valid table names |
-| `schema_name_pattern` | `^[a-z][a-z0-9_]*$` | Regex for valid schema names |
-| `required_table_tags` | `owner,domain,quality_tier` | Tags every table must have |
-| `notification_email` | `""` | Fallback email for unowned assets |
-| `slack_webhook_url` | `""` | Slack webhook for notifications |
-| `jira_base_url` | `""` | Jira URL (empty = disabled) |
-| `jira_project_key` | `""` | Jira project for ticket creation |
-| `dry_run` | `false` | Suppress all write actions |
-| `feature_check_mode` | `standard` | `standard` or `elevated` (admin) |
-| `enable_feature_checks` | `true` | Enable platform feature checks |
-| `model_name` | `databricks-claude-haiku-4-5` | LLM for AI-generated plans (any FMAPI-compatible endpoint) |
-| `enable_ai_plans` | `true` | Enable AI migration plan generation |
-
-</details>
-
----
-
-## SQL Alerts
-
-Seven pre-built alert queries in `src/lib/alerts.py`:
-
-1. **Critical Violations >7d** — Unresolved critical findings (every 60m)
-2. **Certification Expiry** — Tables due for review in 14 days (daily)
-3. **Feature Check Failures** — Platform features not enabled (daily)
-4. **Schema Drift Critical** — Column removals or type changes (daily)
-5. **Stale Notifications** — Owner notifications pending >30d (daily)
-6. **Job Failures** — UC Steward task failures (every 60m)
-7. **Bridge Views Expiring Soon** — Active bridges expiring within 7 days (daily)
-
----
-
-## Project Structure
+## Project structure
 
 ```
 uc-steward/
-├── databricks.yml              # Bundle configuration + variables
-├── resources/
-│   ├── jobs.yml                # 3 jobs, 12 tasks
-│   ├── schemas.yml             # Control schema resource
-│   └── alerts.yml              # Alert documentation
 ├── src/
-│   ├── 00_control_plane_bootstrap.py
-│   ├── 01_staleness_detector.ipynb
-│   ├── 02_tag_compliance_scanner.ipynb
+│   ├── 00_control_plane_bootstrap.py   # Creates control-plane tables
+│   ├── 01_staleness_detector.ipynb     # Find stale tables
+│   ├── 02_tag_compliance_scanner.ipynb # Check required tags
 │   ├── 03_naming_convention_enforcer.ipynb
-│   ├── 04_metadata_enricher.ipynb
+│   ├── 04_metadata_enricher.ipynb      # LLM-assisted descriptions
 │   ├── 05_certification_workflow.ipynb
 │   ├── 06_owner_notifier.ipynb
-│   ├── 07_reconciliation_planner.ipynb
+│   ├── 07_reconciliation_planner.ipynb # Migration plans + bridge views
 │   ├── 08_cost_attribution_tracker.py
-│   ├── 09_monthly_housekeeping.py
-│   ├── 10_schema_drift_detector.ipynb
-│   ├── 11_jira_sync.ipynb
-│   ├── 12_access_proposals.ipynb
-│   └── lib/                    # Shared Python modules
-│       ├── common.py           # Validation, safe SQL, exemptions
-│       ├── policy.py           # Policy accessors
-│       ├── feature_checks.py   # Platform feature probes
-│       ├── schema_drift.py     # Drift detection engine
-│       ├── jira_sync.py        # Bi-directional Jira sync
-│       ├── access_proposals.py # GRANT/REVOKE proposal engine
-│       ├── alerts.py           # SQL alert definitions
-│       ├── governance_score.py # Composite score + dashboards
-│       └── tests/              # 62 pytest tests
-├── policies/
-│   └── policy.yml              # Governance rules source-of-truth
-├── dashboards/
-│   └── UC Steward — Feature Enablement Score.lvdash.json
-├── examples/                   # Sample output for evaluation
-├── docs/                       # Extended documentation
-├── LICENSE                     # Apache 2.0
+│   ├── 09_monthly_housekeeping.py      # Expire bridges, archive old findings
+│   ├── 10–15: drift, jira, domains, semantic review
+│   ├── config.py
+│   └── lib/                            # Shared library code + tests
+├── policies/policy.yml                 # Your rules (edit this)
+├── resources/
+│   ├── jobs.yml                        # Job definitions
+│   ├── alerts.yml                      # Alert definitions
+│   └── schemas.yml
+├── dashboards/                         # Pre-built Lakeview dashboard
+├── examples/                           # Sample outputs
+├── docs/
+│   ├── ARCHITECTURE.md
+│   └── PERMISSIONS.md                  # Full SP permission requirements
+├── databricks.yml                      # DAB bundle config
+├── 00_config.ipynb                     # Interactive setup
 └── CONTRIBUTING.md
 ```
 
----
+## What this is not
 
-## Roadmap
+- **Not a replacement for UC governance features.** As Databricks ships native capabilities (Discover, Domains, quality monitors), modules here become less necessary. That's the goal.
+- **Not an agent.** It's a batch job. It runs on a schedule, writes findings, and shuts down.
+- **Not safe to run unreviewed.** The reconciliation planner can create bridge views. Read the plans it generates before approving execution.
 
-- [ ] Interactive Slack bot for approve/reject of migration plans
-- [ ] Certification approval workflow via Genie Space
-- [ ] Sample bridge view DDL + Jira ticket screenshot in `examples/`
+## Requirements
 
----
+- Databricks Runtime 14.3+ (serverless recommended)
+- Unity Catalog enabled workspace
+- Python 3.10+
+- `databricks-sdk`, `pyyaml`, `jinja2`
+- (Optional) FMAPI access for metadata enrichment — any Foundation Model API endpoint works (defaults to `databricks-claude-haiku-4-5`)
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
----
+See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs welcome.
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+Apache 2.0. See [LICENSE](LICENSE).
