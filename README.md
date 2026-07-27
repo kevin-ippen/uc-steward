@@ -2,8 +2,7 @@
 
 A grab-bag of cleanup utilities for Unity Catalog. Most teams come out of a migration (EDW, HMS → UC, workspace consolidation, etc.) with some combination of stale tables nobody owns, naming that made sense to one person three years ago, missing tags, and zero documentation. This gives you a starting point for getting it under control, and a maturity curve for tightening things up over time.
 
-<img width="1916" height="821" alt="ucsteward" src="https://github.com/user-attachments/assets/c3630379-9d3c-480c-b6ab-792a0cbbd041" />
-
+<img width="2816" height="1536" alt="ucsteward-updated" src="https://github.com/user-attachments/assets/bcfb69d1-1251-418f-b4c3-de7f6c9a8725" />
 
 It's a scheduled Databricks job (deployed via DAB) that reads your UC metadata and system tables, writes findings to a set of control-plane Delta tables, and optionally notifies owners. It proposes changes — it doesn't execute them without review.
 
